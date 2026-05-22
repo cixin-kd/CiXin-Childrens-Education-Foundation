@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>請假查詢系統</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background-color: #f4f7f6; color: #333; }
+        .container { max-width: 500px; margin: 50px auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        h2 { text-align: center; margin-bottom: 20px; color: #2c3e50; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; background-color: #3498db; color: white; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; }
+        button:hover { background-color: #2980b9; }
+        #table-container { margin-top: 20px; overflow-x: auto; display: none; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        td, th { border: 1px solid #bdc3c7; padding: 10px; text-align: center; }
+        th { background-color: #34495e; color: white; }
+        .loading { text-align: center; color: #7f8c8d; font-style: italic; display: none; }
+    </style>
+</head>
+<body>
+
+    <div id="login-box" class="container">
+        <h2>慈心華德福 請假查詢系統</h2>
+        <div class="form-group">
+            <label for="birthday">生日末四碼 (如：0521)</label>
+            <input type="text" id="birthday" placeholder="請輸入生日末四碼">
+        </div>
+        <div class="form-group">
+            <label for="phone">手機號碼</label>
+            <input type="text" id="phone" placeholder="請輸入完整手機號碼">
+        </div>
+        <button id="login-btn">確認登入</button>
+        <p id="loading-msg" class="loading">正在驗證身分，請稍候...</p>
+    </div>
+
+    <div id="table-container">
+        <h2>請假查詢結果</h2>
+        <div id="data-table"></div>
+    </div>
+
+    <script>
+        // 🚨 這裡請貼上你剛剛重新部署的最新 GAS 網址 🚨
+        const scriptUrl = "你的_GAS_重新部署網址_貼在這邊"; 
+
+        document.getElementById('login-btn').onclick = function() {
+            const birthday = document.getElementById('birthday').value.trim();
+            const phone = document.getElementById('phone').value.trim();
+
+            if (!birthday || !phone) {
+                alert("請填寫完整登入資訊！");
+                return;
+            }
+
+            // 顯示載入中
+            document.getElementById('loading-msg').style.display = 'block';
+            document.getElementById('login-btn').disabled = true;
+
+            // 動作一：向 GAS 發送登入驗證
+            fetch(scriptUrl, {
+                method: 'POST',
+                body: JSON.stringify({
+                    action: 'login',
+                    birthdayLast4: birthday,
+                    phone: phone
+                })
+            })
+            .then(res => res.json())
+            .then(response => {
+                if (response.status === 'success' && response.success === true) {
+                    // 登入成功，緊接著執行動作二：抓取請假資料
+                    document.getElementById('loading-msg').innerText = '身分驗證成功，正在載入請假課表...';
+                    fetchLeaveData();
+                } else {
+                    alert("登入失敗：生日或手機號碼不正確！");
+                    resetLoginBtn();
+                }
+            })
+            .catch(err => {
+                alert("連線錯誤：" + err);
+                resetLoginBtn();
+            });
+        };
+
+        function resetLoginBtn() {
+            document.getElementById('loading-msg').style.display = 'none';
+            document.getElementById('loading-msg').innerText = '正在驗證身分，請稍候...';
+            document.getElementById('login-btn').disabled = false;
+        }
+
+        // 動作二：向 GAS 索取請假資料
+        function fetchLeaveData() {
+            fetch(scriptUrl, {
+                method: 'POST',
+                body: JSON.stringify({ action: 'getLeaveData' })
+            })
+            .then(res => res.json())
+            .then(response => {
+                if (response.status === 'success') {
+                    // 隱藏登入頁面，顯示表格頁面
+                    document.getElementById('login-box').style.display = 'none';
+                    document.getElementById('table-container').style.display = 'block';
+                    
+                    // 渲染包含合併儲存格的網頁表格
+                    renderTable(response.data.values, response.data.merges);
+                } else {
+                    alert("資料載入失敗：" + response.message);
+                    resetLoginBtn();
+                }
+            })
+            .catch(err => {
+                alert("抓取資料發生連線錯誤：" + err);
+                resetLoginBtn();
+            });
+        }
+
+        // 核心演算法：在網頁上完美重現 Google 試算表的合併儲存格
+        function renderTable(values, merges) {
+            const numRows = values.length;
+            const numCols = values[0].length;
+            
+            // 建立一個追蹤矩陣，用來標記哪些儲存格因為被合併而不需要重複畫出來
+            const skipMap = Array.from({ length: numRows }, () => Array(numCols).fill(false));
+
+            // 標記需要跳過的被合併單元格
+            merges.forEach(m => {
+                for (let r = m.startRow; r < m.startRow + m.numRows; r++) {
+                    for (let c = m.startCol; c < m.startCol + m.numCols; c++) {
+                        if (r !== m.startRow || c !== m.startCol) {
+                            skipMap[r][c] = true;
+                        }
+                    }
+                }
+            });
+
+            // 開始繪製 HTML Table
+            let html = '<table>';
+            for (let r = 0; r < numRows; r++) {
+                html += '<tr>';
+                for (let c = 0; c < numCols; c++) {
+                    // 如果這個位置已經被其他格合併了，直接跳過不寫 <td>
+                    if (skipMap[r][c]) continue;
+
+                    // 檢查目前這格是不是某個合併區域的左上角起點
+                    let rowspan = 1;
+                    let colspan = 1;
+                    const foundMerge = merges.find(m => m.startRow === r && m.startCol === c);
+                    if (foundMerge) {
+                        rowspan = foundMerge.numRows;
+                        colspan = foundMerge.numCols;
+                    }
+
+                    // 判斷第一列為標題
+                    const tag = (r === 0) ? 'th' : 'td';
+                    html += `<${tag} rowspan="${rowspan}" colspan="${colspan}">${values[r][c]}</${tag}>`;
+                }
+                html += '</tr>';
+            }
+            html += '</table>';
+
+            document.getElementById('data-table').innerHTML = html;
+        }
+    </script>
+</body>
+</html>
