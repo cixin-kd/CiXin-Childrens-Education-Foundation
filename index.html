@@ -10,7 +10,8 @@
         h2 { text-align: center; margin-bottom: 20px; color: #2c3e50; }
         .form-group { margin-bottom: 15px; }
         label { display: block; margin-bottom: 5px; font-weight: bold; }
-        input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        /* 將 select 也加入樣式設定，讓它跟 input 長得一樣漂亮 */
+        input, select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; font-size: 16px; }
         button { width: 100%; padding: 12px; background-color: #3498db; color: white; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; }
         button:hover { background-color: #2980b9; }
         #table-container { margin-top: 20px; overflow-x: auto; display: none; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
@@ -23,7 +24,17 @@
 <body>
 
     <div id="login-box" class="container">
-        <h2>2025-2026慈心華德福 請假查詢系統</h2>
+        <h2>慈心華德福幼教師培 請假查詢系統</h2>
+        
+        <!-- 新增：下拉式選單區塊 -->
+        <div class="form-group">
+            <label for="site-select">選擇查詢年度</label>
+            <select id="site-select">
+                <option value="siteA">2025-2026</option>
+                <option value="siteB">2026-2027</option>
+            </select>
+        </div>
+
         <div class="form-group">
             <label for="birthday">生日末四碼 (如：0521)</label>
             <input type="text" id="birthday" placeholder="請輸入生日末四碼">
@@ -38,14 +49,26 @@
 
     <div id="table-container">
         <h2>請假查詢結果</h2>
+        <!-- 增加一個返回按鈕方便使用者登出或重查 -->
+        <button onclick="location.reload()" style="background-color: #95a5a6; margin-bottom: 15px; width: auto; padding: 8px 15px;">登出 / 返回</button>
         <div id="data-table"></div>
     </div>
 
     <script>
-        // 🚨 這裡請貼上你剛剛重新部署的最新 GAS 網址 🚨
-        const scriptUrl = "https://script.google.com/macros/s/AKfycbyYHa8DfW8SpBghVoFd3b3RKGjNoZD9OmYu82AZn0VANRkBxl032W-4vubLG0ZXjmLP/exec"; 
+        // 🚨 這裡建立一個物件，存放你所有不同試算表後端的 GAS 網址 🚨
+        const gasUrls = {
+            "siteA": "https://script.google.com/macros/s/AKfycbyYHa8DfW8SpBghVoFd3b3RKGjNoZD9OmYu82AZn0VANRkBxl032W-4vubLG0ZXjmLP/exec", // 這是你原本提供的
+            "siteB": "https://script.google.com/macros/s/AKfycbyN9P1Gdboa0M3st2dDMakGp3zPjJ74MsvxXkzgzlfj9MmSO6D_hoiqW89xEBYYvz3l/exec" // 🚨 請換成第二個 GAS 網址
+        };
+
+        // 用來記錄當下選擇的 API 網址，讓 fetchLeaveData 也能讀取到
+        let currentScriptUrl = ""; 
 
         document.getElementById('login-btn').onclick = function() {
+            // 取得使用者選擇的站點代碼，並對應出正確的 GAS 網址
+            const selectedSite = document.getElementById('site-select').value;
+            currentScriptUrl = gasUrls[selectedSite];
+
             const birthday = document.getElementById('birthday').value.trim();
             const phone = document.getElementById('phone').value.trim();
 
@@ -58,9 +81,11 @@
             document.getElementById('loading-msg').style.display = 'block';
             document.getElementById('login-btn').disabled = true;
 
-            // 動作一：向 GAS 發送登入驗證
-            fetch(scriptUrl, {
+            // 動作一：向選定的 GAS 發送登入驗證
+            fetch(currentScriptUrl, {
                 method: 'POST',
+                // 建議補上 headers 避免 CORS 問題
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                 body: JSON.stringify({
                     action: 'login',
                     birthdayLast4: birthday,
@@ -90,10 +115,12 @@
             document.getElementById('login-btn').disabled = false;
         }
 
-        // 動作二：向 GAS 索取請假資料
+        // 動作二：向同一個 GAS 索取請假資料
         function fetchLeaveData() {
-            fetch(scriptUrl, {
+            // 注意這裡使用的是 currentScriptUrl
+            fetch(currentScriptUrl, {
                 method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                 body: JSON.stringify({ action: 'getLeaveData' })
             })
             .then(res => res.json())
@@ -152,9 +179,12 @@
                         colspan = foundMerge.numCols;
                     }
 
+                    // 處理換行符號，讓試算表的 Alt+Enter 在網頁上也能正確換行
+                    let cellValue = values[r][c].replace(/\n/g, '<br>');
+
                     // 判斷第一列為標題
                     const tag = (r === 0) ? 'th' : 'td';
-                    html += `<${tag} rowspan="${rowspan}" colspan="${colspan}">${values[r][c]}</${tag}>`;
+                    html += `<${tag} rowspan="${rowspan}" colspan="${colspan}">${cellValue}</${tag}>`;
                 }
                 html += '</tr>';
             }
